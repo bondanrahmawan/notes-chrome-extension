@@ -47,4 +47,31 @@ document.getElementById("openFormBtn").addEventListener("click", function () {
 	});
 });
 
+function loadBooks() {
+	chrome.storage.sync.get(["books"], function (result) {
+		const books = result.books || [];
+		displayBooks(books);
+	});
+}
+
+function displayBooks(books) {
+	const booksList = document.getElementById("booksList");
+	booksList.innerHTML = ""; // Clear book list
+
+	books.forEach((book) => {
+		const bookDiv = document.createElement("div");
+		bookDiv.classList.add("book");
+		bookDiv.style.backgroundColor = "#333";
+		bookDiv.style.color = "#FFF"; // Default font color if not set
+
+		bookDiv.innerHTML = `
+      <strong>${book.title}</strong><br>
+      Page: ${book.page}<br>
+      Last Read: ${book.lastRead}
+    `;
+		booksList.appendChild(bookDiv);
+	});
+}
+
 loadNotes();
+loadBooks();

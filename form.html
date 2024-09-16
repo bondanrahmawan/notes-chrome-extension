@@ -5,6 +5,7 @@
 		<style>
 			body {
 				font-family: Arial, sans-serif;
+				width: 450px;
 			}
 			.note-item {
 				border: 1px solid #ccc;
@@ -60,6 +61,16 @@
 
 			<button id="saveNoteBtn">Save Note</button>
 		</div>
+
+		<hr />
+
+		<div id="bookList"></div>
+
+		<h3 id="formTitle">Add/Edit Book</h3>
+		<input type="text" id="bookTitle" placeholder="Book Title" />
+		<input type="number" id="bookPage" placeholder="Page Number" min="1" />
+		<input type="date" id="bookLastRead" />
+		<button id="saveBookBtn">Save Book</button>
 
 		<script src="form.js"></script>
 	</body>

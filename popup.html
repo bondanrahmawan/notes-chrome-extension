@@ -21,16 +21,25 @@
 			.note-left {
 				flex: 1; /* Make the left section take most of the space */
 			}
-
 			.note-right {
 				flex-shrink: 0; /* Prevent the right section from shrinking */
 				text-align: right; /* Align text to the right */
+			}
+
+			.book {
+				padding: 10px;
+				margin-bottom: 10px;
+				border: 1px solid #ccc; /* Optional: Add border for better visual separation */
+				border-radius: 5px;
+				color: #000;
 			}
 		</style>
 	</head>
 	<body>
 		<div id="notesList"></div>
-		<button id="openFormBtn">Add Note & Settings</button>
+		<hr />
+		<div id="booksList"></div>
+		<button id="openFormBtn">Edit & Settings</button>
 		<script src="popup.js"></script>
 	</body>
 </html>
