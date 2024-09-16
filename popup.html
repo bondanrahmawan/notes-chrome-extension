@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Sticky Notes</title>
+		<style>
+			/* Add some basic styling */
+			body {
+				font-family: Arial, sans-serif;
+				width: 200px;
+			}
+			.note {
+				display: flex;
+				justify-content: space-between; /* Separate left and right sections */
+				align-items: center; /* Vertically center content */
+				padding: 10px;
+				margin-bottom: 10px;
+				border: 1px solid #ccc; /* Optional: Add border for better visual separation */
+				border-radius: 5px;
+				color: #000;
+			}
+			.note-left {
+				flex: 1; /* Make the left section take most of the space */
+			}
+
+			.note-right {
+				flex-shrink: 0; /* Prevent the right section from shrinking */
+				text-align: right; /* Align text to the right */
+			}
+		</style>
+	</head>
+	<body>
+		<div id="notesList"></div>
+		<button id="openFormBtn">Add Note & Settings</button>
+		<script src="popup.js"></script>
+	</body>
+</html>

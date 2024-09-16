@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Manage Sticky Notes</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+			}
+			.note-item {
+				border: 1px solid #ccc;
+				padding: 10px;
+				margin-bottom: 10px;
+				border-radius: 4px;
+			}
+			.note-item button {
+				margin-right: 5px;
+			}
+			.color-options {
+				display: flex;
+				gap: 10px;
+				margin-bottom: 10px;
+			}
+			.color-option {
+				width: 30px;
+				height: 30px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				cursor: pointer;
+			}
+			.color-option.selected {
+				border: 2px solid black;
+			}
+		</style>
+	</head>
+	<body>
+		<h2>Manage Sticky Notes</h2>
+
+		<div id="noteList"></div>
+
+		<h3 id="formTitle">Add/Edit Note</h3>
+		<div id="noteForm">
+			<input type="text" id="noteTitle" placeholder="Note Title" />
+			<input type="date" id="noteDeadline" />
+			<select id="notePriority">
+				<option value="Low">Low</option>
+				<option value="Medium">Medium</option>
+				<option value="High">High</option>
+			</select>
+
+			<div class="color-options" id="colorOptions">
+				<div class="color-option" style="background-color: #ffeb3b" data-color="#ffeb3b"></div>
+				<div class="color-option" style="background-color: #ff5722" data-color="#ff5722"></div>
+				<div class="color-option" style="background-color: #4caf50" data-color="#4caf50"></div>
+				<div class="color-option" style="background-color: #2196f3" data-color="#2196f3"></div>
+				<div class="color-option" style="background-color: #9c27b0" data-color="#9c27b0"></div>
+			</div>
+
+			<input type="color" id="noteFontColor" value="#000000" />
+			<input type="number" id="noteOrder" placeholder="Order" min="1" />
+
+			<button id="saveNoteBtn">Save Note</button>
+		</div>
+
+		<script src="form.js"></script>
+	</body>
+</html>
