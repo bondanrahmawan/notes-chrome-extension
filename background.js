@@ -534,12 +534,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 function openPopup() {
-  chrome.windows.create({
-    url: "popup.html",
-    type: "popup",
-    width: 380,
-    height: 550,
-  });
+  chrome.action.openPopup();
 }
 
 // Setup Auto Popup Interval Alarm
