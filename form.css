@@ -128,6 +128,7 @@ h3 {
 
 .item-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
 }
@@ -280,6 +281,15 @@ button:hover {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+.switch-btn {
+  color: #fbbf24;
+}
+
+.switch-btn:hover {
+  background-color: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
 .finish-btn {
   color: #10b981;
 }
@@ -287,6 +297,53 @@ button:hover {
 .finish-btn:hover {
   background-color: rgba(16, 185, 129, 0.1);
   border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* Note list fills full width */
+#noteList {
+  grid-template-columns: 1fr;
+}
+
+/* Block item lists single-column (they live in a half-width parent) */
+#hardBlockList,
+#softBlockList {
+  grid-template-columns: 1fr;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.stat-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.stat-card-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent-indigo);
+  line-height: 1;
+}
+
+.stat-card-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-top: 2px;
 }
 
 /* Empty placeholder */

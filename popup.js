@@ -272,7 +272,8 @@ function updateTimerUI(state) {
 	const progressCircle = document.getElementById('progressCircle');
 	const startBtn = document.getElementById('startTimerBtn');
 	const completedSessions = document.getElementById('completedSessions');
-	
+	const completedToday = document.getElementById('completedSessionsToday');
+
 	const playIcon = document.getElementById('playIcon');
 	const pauseIcon = document.getElementById('pauseIcon');
 
@@ -321,6 +322,9 @@ function updateTimerUI(state) {
 	// Completed sessions count
 	if (completedSessions) {
 		completedSessions.textContent = state.completedSessions || 0;
+	}
+	if (completedToday) {
+		completedToday.textContent = state.completedSessionsToday || 0;
 	}
 }
 

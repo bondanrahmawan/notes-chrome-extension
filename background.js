@@ -11,6 +11,8 @@ const DEFAULT_STATE = {
   isRunning: false,
   expectedEndTime: 0,
   completedSessions: 0,
+  completedSessionsToday: 0,
+  pomodoroResetDate: '',
   settings: {
     workDuration: 25,
     shortBreakDuration: 5,
@@ -30,7 +32,16 @@ const DEFAULT_BLOCKER_STATE = {
 // Pomodoro State Accessors
 async function getState() {
   const result = await chrome.storage.sync.get(STORAGE_KEY);
-  return { ...DEFAULT_STATE, ...result[STORAGE_KEY] };
+  const state = { ...DEFAULT_STATE, ...result[STORAGE_KEY] };
+
+  const today = new Date().toISOString().split('T')[0];
+  if (state.pomodoroResetDate !== today) {
+    state.completedSessionsToday = 0;
+    state.pomodoroResetDate = today;
+    await saveState(state);
+  }
+
+  return state;
 }
 
 async function saveState(state) {
@@ -100,6 +111,7 @@ async function handleSessionComplete(state) {
 
   if (state.sessionType === 'work') {
     state.completedSessions++;
+    state.completedSessionsToday++;
   }
 
   await sendNotification(state.sessionType);
@@ -214,6 +226,45 @@ function getDomainFromUrl(url) {
   }
 }
 
+function matchesBlockedDomain(domain, blockedDomain) {
+  return domain === blockedDomain || domain.endsWith('.' + blockedDomain);
+}
+
+async function isTemporarilyAllowed(domain) {
+  const result = await chrome.storage.local.get('tempAllowSites');
+  const tempAllowSites = result.tempAllowSites || {};
+  let changed = false;
+  let allowed = false;
+  const now = Date.now();
+
+  Object.keys(tempAllowSites).forEach((allowedDomain) => {
+    if (tempAllowSites[allowedDomain] <= now) {
+      delete tempAllowSites[allowedDomain];
+      changed = true;
+      return;
+    }
+
+    if (matchesBlockedDomain(domain, allowedDomain)) {
+      allowed = true;
+    }
+  });
+
+  if (changed) {
+    await chrome.storage.local.set({ tempAllowSites });
+  }
+
+  return allowed;
+}
+
+function getBlockedPageUrl(mode, blockedDomain, originalUrl) {
+  const params = new URLSearchParams({
+    mode,
+    domain: blockedDomain,
+    url: originalUrl || ''
+  });
+  return chrome.runtime.getURL('blocked.html?' + params.toString());
+}
+
 async function checkAndResetDailyTimer(state) {
   const today = new Date().toISOString().split('T')[0];
   if (state.lastResetDate !== today) {
@@ -244,21 +295,26 @@ async function handleTabChange(tab) {
 
   await checkAndResetDailyTimer(state);
 
+  if (await isTemporarilyAllowed(domain)) {
+    await pauseActiveTracking();
+    return;
+  }
+
   // 1. Check Hard Blacklist (takes absolute priority!)
-  const hardMatch = state.sites.find(s => s.mode === 'hard' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+  const hardMatch = state.sites.find(s => s.mode === 'hard' && matchesBlockedDomain(domain, s.domain));
   if (hardMatch) {
     await pauseActiveTracking();
-    chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=hard&domain=' + encodeURIComponent(hardMatch.domain)) });
+    chrome.tabs.update(tab.id, { url: getBlockedPageUrl('hard', hardMatch.domain, tab.url) });
     return;
   }
 
   // 2. Check Soft Blacklist
-  const softMatch = state.sites.find(s => s.mode === 'soft' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+  const softMatch = state.sites.find(s => s.mode === 'soft' && matchesBlockedDomain(domain, s.domain));
   if (softMatch) {
     // If daily soft limit has already been exceeded
     if (softMatch.timeSpentToday >= softMatch.limitMinutes * 60) {
       await pauseActiveTracking();
-      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=soft&domain=' + encodeURIComponent(softMatch.domain)) });
+      chrome.tabs.update(tab.id, { url: getBlockedPageUrl('soft', softMatch.domain, tab.url) });
       return;
     }
 
@@ -327,17 +383,19 @@ async function sweepAllTabsForBlocks() {
     const domain = getDomainFromUrl(tab.url);
     if (!domain) continue;
 
+    if (await isTemporarilyAllowed(domain)) continue;
+
     // Check hard blocks
-    const hardMatch = state.sites.find(s => s.mode === 'hard' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+    const hardMatch = state.sites.find(s => s.mode === 'hard' && matchesBlockedDomain(domain, s.domain));
     if (hardMatch) {
-      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=hard&domain=' + encodeURIComponent(hardMatch.domain)) });
+      chrome.tabs.update(tab.id, { url: getBlockedPageUrl('hard', hardMatch.domain, tab.url) });
       continue;
     }
 
     // Check soft blocks
-    const softMatch = state.sites.find(s => s.mode === 'soft' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+    const softMatch = state.sites.find(s => s.mode === 'soft' && matchesBlockedDomain(domain, s.domain));
     if (softMatch && softMatch.timeSpentToday >= softMatch.limitMinutes * 60) {
-      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=soft&domain=' + encodeURIComponent(softMatch.domain)) });
+      chrome.tabs.update(tab.id, { url: getBlockedPageUrl('soft', softMatch.domain, tab.url) });
     }
   }
 
@@ -350,6 +408,18 @@ async function sweepAllTabsForBlocks() {
 
 function broadcastBlockerState(state) {
   chrome.runtime.sendMessage({ type: 'BLOCKER_STATE_UPDATE', state }).catch(() => {});
+}
+
+async function clearStaleSoftBlockAlarms(state) {
+  const softDomains = new Set((state.sites || [])
+    .filter(site => site.mode === 'soft')
+    .map(site => site.domain));
+  const alarms = await chrome.alarms.getAll();
+
+  await Promise.all(alarms
+    .filter(alarm => alarm.name.startsWith('softBlock_'))
+    .filter(alarm => !softDomains.has(alarm.name.substring('softBlock_'.length)))
+    .map(alarm => chrome.alarms.clear(alarm.name)));
 }
 
 
@@ -381,8 +451,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
       const tabDomain = getDomainFromUrl(tab.url);
-      if (tabDomain && (tabDomain === domain || tabDomain.endsWith('.' + domain))) {
-        chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=soft&domain=' + encodeURIComponent(domain)) });
+      if (tabDomain && matchesBlockedDomain(tabDomain, domain) && !(await isTemporarilyAllowed(tabDomain))) {
+        chrome.tabs.update(tab.id, { url: getBlockedPageUrl('soft', domain, tab.url) });
       }
     }
   }
@@ -448,9 +518,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       setSessionType(message.sessionType).then(() => sendResponse({ success: true }));
       return true;
     case 'BLOCKER_STATE_UPDATE':
+      if (!message.state) {
+        sendResponse({ success: false, error: 'Missing blocker state' });
+        return false;
+      }
       saveBlockerState(message.state)
+        .then(() => clearStaleSoftBlockAlarms(message.state))
         .then(() => sweepAllTabsForBlocks())
         .then(() => sendResponse({ success: true }));
+      return true;
+    case 'BLOCKER_SWEEP':
+      sweepAllTabsForBlocks().then(() => sendResponse({ success: true }));
       return true;
   }
 });

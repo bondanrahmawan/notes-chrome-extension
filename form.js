@@ -383,6 +383,7 @@ document.addEventListener("DOMContentLoaded", function () {
 							<span style="color: var(--text-muted)">Immediate block</span>
 						</div>
 						<div class="item-actions">
+							<button class="switchBlockModeBtn switch-btn" data-domain="${escapeHtml(site.domain)}" data-target-mode="soft">Move to Soft</button>
 							<button class="deleteBlockBtn delete-btn" data-domain="${escapeHtml(site.domain)}">Remove</button>
 						</div>
 					`;
@@ -403,6 +404,7 @@ document.addEventListener("DOMContentLoaded", function () {
 							<span style="color: var(--text-muted)">Limit: ${site.limitMinutes}m | Spent: ${spentMin}m today</span>
 						</div>
 						<div class="item-actions">
+							<button class="switchBlockModeBtn switch-btn" data-domain="${escapeHtml(site.domain)}" data-target-mode="hard">Move to Hard</button>
 							<button class="deleteBlockBtn delete-btn" data-domain="${escapeHtml(site.domain)}">Remove</button>
 						</div>
 					`;
@@ -415,6 +417,14 @@ document.addEventListener("DOMContentLoaded", function () {
 				button.addEventListener("click", function () {
 					const domain = this.getAttribute("data-domain");
 					removeBlockedSite(domain);
+				});
+			});
+
+			document.querySelectorAll(".switchBlockModeBtn").forEach((button) => {
+				button.addEventListener("click", function () {
+					const domain = this.getAttribute("data-domain");
+					const targetMode = this.getAttribute("data-target-mode");
+					switchBlockedSiteMode(domain, targetMode);
 				});
 			});
 		});
@@ -478,6 +488,39 @@ document.addEventListener("DOMContentLoaded", function () {
 		});
 	}
 
+	function switchBlockedSiteMode(domain, targetMode) {
+		chrome.storage.sync.get(["blockerState"], function (result) {
+			const state = result.blockerState || { enabled: true, sites: [], lastResetDate: "" };
+			const site = state.sites.find(s => s.domain === domain);
+			if (!site) return;
+
+			if (targetMode === "soft") {
+				const rawLimit = prompt("Daily soft-block limit in minutes:", site.limitMinutes || 15);
+				if (rawLimit === null) return;
+
+				const limitMinutes = parseInt(rawLimit, 10);
+				if (isNaN(limitMinutes) || limitMinutes < 1 || limitMinutes > 180) {
+					alert("Please enter a valid time limit between 1 and 180 minutes.");
+					return;
+				}
+
+				site.mode = "soft";
+				site.limitMinutes = limitMinutes;
+				site.timeSpentToday = 0;
+			} else if (targetMode === "hard") {
+				site.mode = "hard";
+				site.limitMinutes = 0;
+				site.timeSpentToday = 0;
+			}
+
+			chrome.storage.sync.set({ blockerState: state }, function () {
+				chrome.runtime.sendMessage({ type: 'BLOCKER_STATE_UPDATE', state }).catch(() => {});
+				displayBlocker();
+				loadStats();
+			});
+		});
+	}
+
 	saveBlockBtn.addEventListener("click", saveBlockedSite);
 
 
@@ -509,9 +552,30 @@ document.addEventListener("DOMContentLoaded", function () {
 	});
 
 
+	function loadStats() {
+		chrome.storage.sync.get(["pomodoroState", "notes", "books", "blockerState"], function (result) {
+			const pomo = result.pomodoroState || {};
+			const notes = result.notes || [];
+			const books = result.books || [];
+			const blocker = result.blockerState || { sites: [] };
+
+			const sessionsToday = pomo.completedSessionsToday || 0;
+			const workDuration = (pomo.settings && pomo.settings.workDuration) || 25;
+			const focusMin = sessionsToday * workDuration;
+
+			document.getElementById("statSessionsToday").textContent = sessionsToday;
+			document.getElementById("statFocusToday").textContent = focusMin + 'm';
+			document.getElementById("statTotalSessions").textContent = pomo.completedSessions || 0;
+			document.getElementById("statNotes").textContent = notes.length;
+			document.getElementById("statBooks").textContent = books.length;
+			document.getElementById("statSitesBlocked").textContent = (blocker.sites || []).length;
+		});
+	}
+
 	// Display on load
 	displayNotes();
 	displayBooks();
 	displayBlocker();
 	loadGeneralSettings();
+	loadStats();
 });

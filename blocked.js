@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
   const mode = urlParams.get('mode');
   const domain = urlParams.get('domain') || 'this website';
+  const originalUrl = urlParams.get('url');
 
   const blockIcon = document.getElementById('blockIcon');
   const blockTitle = document.getElementById('blockTitle');
@@ -67,6 +68,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Handle temporary allow action (5 minutes bypass)
   tempAllowBtn.addEventListener('click', () => {
+    if (!domain || domain === 'this website') {
+      window.location.href = originalUrl || 'https://www.google.com';
+      return;
+    }
+
     chrome.storage.local.get('tempAllowSites', (result) => {
       const tempAllowSites = result.tempAllowSites || {};
       
@@ -74,10 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
       tempAllowSites[domain] = Date.now() + (5 * 60 * 1000);
       
       chrome.storage.local.set({ tempAllowSites }, () => {
-        // Trigger background sweep so tabs are unblocked immediately
-        chrome.runtime.sendMessage({ type: 'BLOCKER_STATE_UPDATE' }).catch(() => {});
-        // Navigate back to original URL
-        window.location.href = 'https://' + domain;
+        chrome.runtime.sendMessage({ type: 'BLOCKER_SWEEP' }).catch(() => {});
+        window.location.href = originalUrl || ('https://' + domain);
       });
     });
   });
