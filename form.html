@@ -100,6 +100,47 @@
 			</div>
 		</div>
 
+		<!-- Productivity Blocker Section -->
+		<div class="section-container">
+			<h3>Productivity Website Blocker</h3>
+			<div class="form-grid" style="margin-bottom: 20px;">
+				<div class="form-group">
+					<label>Hard Block List (Immediate)</label>
+					<div id="hardBlockList" class="items-list" style="max-height: 150px;">
+						<div class="empty-list-msg">No sites hard-blocked.</div>
+					</div>
+				</div>
+				<div class="form-group">
+					<label>Soft Block List (Time-Limited)</label>
+					<div id="softBlockList" class="items-list" style="max-height: 150px;">
+						<div class="empty-list-msg">No sites soft-blocked.</div>
+					</div>
+				</div>
+			</div>
+
+			<h3>Add Blocked Website</h3>
+			<div class="form-grid">
+				<div class="form-group form-group-full">
+					<label for="blockDomain">Website Domain</label>
+					<input type="text" id="blockDomain" placeholder="e.g., youtube.com or facebook.com" />
+				</div>
+				<div class="form-group">
+					<label for="blockMode">Block Mode</label>
+					<select id="blockMode">
+						<option value="hard">Hard Block (Strict Block)</option>
+						<option value="soft">Soft Block (Daily Time Limit)</option>
+					</select>
+				</div>
+				<div class="form-group">
+					<label for="blockLimit">Time Limit (minutes)</label>
+					<input type="number" id="blockLimit" placeholder="e.g., 15" min="1" max="180" disabled />
+				</div>
+				<div class="form-group form-group-full">
+					<button id="saveBlockBtn" class="primary-btn">Block Website</button>
+				</div>
+			</div>
+		</div>
+
 		<!-- General Settings Section -->
 		<div class="section-container">
 			<h3>General Extension Settings</h3>

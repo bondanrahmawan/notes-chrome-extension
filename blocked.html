@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FocusSpace - Site Blocked</title>
+  <meta charset="utf-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    :root {
+      --bg-dark: #090d16;
+      --bg-card: rgba(30, 41, 59, 0.45);
+      --border-light: rgba(255, 255, 255, 0.08);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-work: #f43f5e;
+      --accent-indigo: #6366f1;
+      --accent-success: #10b981;
+    }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    
+    .blocked-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      padding: 36px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+    }
+    
+    .icon {
+      font-size: 56px;
+      margin-bottom: 18px;
+      display: inline-block;
+      animation: pulse 2s infinite ease-in-out;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
+    }
+    
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stats-panel {
+      margin-bottom: 24px;
+      text-align: left;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-light);
+      padding: 16px;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .stat-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      letter-spacing: 0.8px;
+    }
+
+    .stat-value {
+      font-weight: 700;
+    }
+
+    #savedMinutesCount {
+      font-size: 20px;
+      color: var(--accent-success);
+    }
+
+    #currentTaskText {
+      font-size: 13.5px;
+      color: var(--text-primary);
+      line-height: 1.4;
+    }
+    
+    .go-back-btn {
+      background-color: var(--accent-indigo);
+      border: none;
+      color: #fff;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      width: 100%;
+      font-family: inherit;
+      margin-bottom: 10px;
+    }
+    
+    .go-back-btn:hover {
+      background-color: #4f46e5;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    .allow-btn {
+      background-color: transparent;
+      border: 1px solid var(--border-light);
+      color: var(--text-secondary);
+      padding: 10px 24px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      width: 100%;
+      font-family: inherit;
+    }
+    
+    .allow-btn:hover {
+      color: var(--text-primary);
+      background-color: rgba(255, 255, 255, 0.04);
+      border-color: var(--text-secondary);
+    }
+    
+    .quote-container {
+      border-top: 1px solid var(--border-light);
+      padding-top: 16px;
+      margin-top: 24px;
+      font-style: italic;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    
+    .quote-author {
+      font-size: 9px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="blocked-card">
+    <span class="icon" id="blockIcon">🔒</span>
+    <h1 id="blockTitle">This site is blocked.</h1>
+    
+    <div class="stats-panel">
+      <div class="stat-row">
+        <span class="stat-title">You've saved:</span>
+        <span class="stat-value"><span id="savedMinutesCount">0</span> minutes today</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-title">Current task:</span>
+        <span class="stat-value" id="currentTaskText">Loading...</span>
+      </div>
+    </div>
+    
+    <button class="go-back-btn" id="goBackBtn">Go Back</button>
+    <button class="allow-btn" id="tempAllowBtn">Temporary Allow</button>
+    
+    <div class="quote-container">
+      <span id="quoteText">"Focus is a matter of deciding what things you're not going to do."</span>
+      <div class="quote-author" id="quoteAuthor">John Carmack</div>
+    </div>
+  </div>
+
+  <script src="blocked.js"></script>
+</body>
+</html>

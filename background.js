@@ -2,6 +2,8 @@ const TIMER_ALARM = 'pomodoroTimer';
 const POPUP_ALARM = 'autoPopup';
 const STORAGE_KEY = 'pomodoroState';
 
+const BLOCKER_STORAGE_KEY = 'blockerState';
+
 const DEFAULT_STATE = {
   sessionType: 'work',
   timeLeft: 25 * 60,
@@ -19,6 +21,13 @@ const DEFAULT_STATE = {
   }
 };
 
+const DEFAULT_BLOCKER_STATE = {
+  enabled: true,
+  sites: [], // { domain, mode: 'hard'|'soft', limitMinutes, timeSpentToday }
+  lastResetDate: ''
+};
+
+// Pomodoro State Accessors
 async function getState() {
   const result = await chrome.storage.sync.get(STORAGE_KEY);
   return { ...DEFAULT_STATE, ...result[STORAGE_KEY] };
@@ -26,6 +35,16 @@ async function getState() {
 
 async function saveState(state) {
   await chrome.storage.sync.set({ [STORAGE_KEY]: state });
+}
+
+// Blocker State Accessors
+async function getBlockerState() {
+  const result = await chrome.storage.sync.get(BLOCKER_STORAGE_KEY);
+  return { ...DEFAULT_BLOCKER_STATE, ...result[BLOCKER_STORAGE_KEY] };
+}
+
+async function saveBlockerState(state) {
+  await chrome.storage.sync.set({ [BLOCKER_STORAGE_KEY]: state });
 }
 
 function getDurationForSession(sessionType, settings) {
@@ -51,7 +70,6 @@ function getNextSessionType(currentType, completedSessions, settings) {
 
 async function createTimerAlarm(timestamp) {
   await clearTimerAlarm();
-  // Set alarm for exact target timestamp
   await chrome.alarms.create(TIMER_ALARM, {
     when: timestamp
   });
@@ -84,13 +102,10 @@ async function handleSessionComplete(state) {
     state.completedSessions++;
   }
 
-  // Notify user
   await sendNotification(state.sessionType);
   
-  // Broadcast chime message to popup if it's currently open
   chrome.runtime.sendMessage({ type: 'POMODORO_COMPLETE_CHIME' });
 
-  // Get next session
   const nextSessionType = getNextSessionType(state.sessionType, state.completedSessions, state.settings);
   const shouldAutoStart = nextSessionType === 'work' 
     ? state.settings.autoStartWork 
@@ -160,7 +175,6 @@ async function updateSettings(newSettings) {
   const state = await getState();
   state.settings = { ...state.settings, ...newSettings };
   
-  // Update times if timer is idle
   if (!state.isRunning) {
     state.totalTime = getDurationForSession(state.sessionType, state.settings);
     state.timeLeft = state.totalTime;
@@ -184,11 +198,162 @@ async function setSessionType(sessionType) {
 }
 
 function broadcastState(state) {
-  // Ignore error if popup is not open/listening
   chrome.runtime.sendMessage({ type: 'POMODORO_STATE_UPDATE', state }).catch(() => {});
 }
 
-// Alarm Listener
+
+// Productivity Blocker Time Tracking & Detection Engine
+function getDomainFromUrl(url) {
+  try {
+    if (!url) return null;
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.hostname.replace(/^www\./, '');
+  } catch (e) {
+    return null;
+  }
+}
+
+async function checkAndResetDailyTimer(state) {
+  const today = new Date().toISOString().split('T')[0];
+  if (state.lastResetDate !== today) {
+    state.sites.forEach(site => {
+      site.timeSpentToday = 0;
+    });
+    state.lastResetDate = today;
+    await saveBlockerState(state);
+    await chrome.storage.local.remove('activeTracking');
+    broadcastBlockerState(state);
+  }
+}
+
+async function handleTabChange(tab) {
+  if (!tab || !tab.url || tab.url.startsWith('chrome') || tab.url.startsWith('chrome-extension')) {
+    await pauseActiveTracking();
+    return;
+  }
+
+  const domain = getDomainFromUrl(tab.url);
+  if (!domain) {
+    await pauseActiveTracking();
+    return;
+  }
+
+  const state = await getBlockerState();
+  if (!state.enabled) return;
+
+  await checkAndResetDailyTimer(state);
+
+  // 1. Check Hard Blacklist (takes absolute priority!)
+  const hardMatch = state.sites.find(s => s.mode === 'hard' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+  if (hardMatch) {
+    await pauseActiveTracking();
+    chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=hard&domain=' + encodeURIComponent(hardMatch.domain)) });
+    return;
+  }
+
+  // 2. Check Soft Blacklist
+  const softMatch = state.sites.find(s => s.mode === 'soft' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+  if (softMatch) {
+    // If daily soft limit has already been exceeded
+    if (softMatch.timeSpentToday >= softMatch.limitMinutes * 60) {
+      await pauseActiveTracking();
+      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=soft&domain=' + encodeURIComponent(softMatch.domain)) });
+      return;
+    }
+
+    // Still has remaining browsing budget! Track active time.
+    const local = await chrome.storage.local.get('activeTracking');
+    const tracking = local.activeTracking;
+
+    if (tracking && tracking.domain === softMatch.domain) {
+      return; // Already tracking this domain, carry on
+    }
+
+    if (tracking) {
+      await pauseActiveTracking(); // Pause other site tracking
+    }
+
+    // Start tracking
+    const startTime = Date.now();
+    await chrome.storage.local.set({
+      activeTracking: {
+        domain: softMatch.domain,
+        tabId: tab.id,
+        startTime: startTime
+      }
+    });
+
+    // Schedule an alarm to fire when limit is reached
+    const remainingSeconds = (softMatch.limitMinutes * 60) - softMatch.timeSpentToday;
+    await chrome.alarms.clear('softBlock_' + softMatch.domain);
+    await chrome.alarms.create('softBlock_' + softMatch.domain, {
+      when: Date.now() + (remainingSeconds * 1000)
+    });
+  } else {
+    // Navigated to non-blocked site, commit active tracking
+    await pauseActiveTracking();
+  }
+}
+
+async function pauseActiveTracking() {
+  const local = await chrome.storage.local.get('activeTracking');
+  const tracking = local.activeTracking;
+  if (!tracking) return;
+
+  // Clear local storage tracking state and associated softBlock alarm
+  await chrome.storage.local.remove('activeTracking');
+  await chrome.alarms.clear('softBlock_' + tracking.domain);
+
+  const elapsedSeconds = Math.floor((Date.now() - tracking.startTime) / 1000);
+  if (elapsedSeconds <= 0) return;
+
+  // Update timeSpentToday in sync storage
+  const state = await getBlockerState();
+  const site = state.sites.find(s => s.domain === tracking.domain && s.mode === 'soft');
+  if (site) {
+    site.timeSpentToday = (site.timeSpentToday || 0) + elapsedSeconds;
+    await saveBlockerState(state);
+    broadcastBlockerState(state);
+  }
+}
+
+async function sweepAllTabsForBlocks() {
+  const state = await getBlockerState();
+  if (!state.enabled) return;
+
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    const domain = getDomainFromUrl(tab.url);
+    if (!domain) continue;
+
+    // Check hard blocks
+    const hardMatch = state.sites.find(s => s.mode === 'hard' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+    if (hardMatch) {
+      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=hard&domain=' + encodeURIComponent(hardMatch.domain)) });
+      continue;
+    }
+
+    // Check soft blocks
+    const softMatch = state.sites.find(s => s.mode === 'soft' && (domain === s.domain || domain.endsWith('.' + s.domain)));
+    if (softMatch && softMatch.timeSpentToday >= softMatch.limitMinutes * 60) {
+      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=soft&domain=' + encodeURIComponent(softMatch.domain)) });
+    }
+  }
+
+  // Check currently active tab
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (activeTab) {
+    await handleTabChange(activeTab);
+  }
+}
+
+function broadcastBlockerState(state) {
+  chrome.runtime.sendMessage({ type: 'BLOCKER_STATE_UPDATE', state }).catch(() => {});
+}
+
+
+// Chrome Event Registers
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === TIMER_ALARM) {
     const state = await getState();
@@ -198,6 +363,63 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
   } else if (alarm.name === POPUP_ALARM) {
     openPopup();
+  } else if (alarm.name.startsWith('softBlock_')) {
+    const domain = alarm.name.substring('softBlock_'.length);
+    
+    // Commit time spent to maximum
+    const state = await getBlockerState();
+    const site = state.sites.find(s => s.domain === domain && s.mode === 'soft');
+    if (site) {
+      site.timeSpentToday = site.limitMinutes * 60;
+      await saveBlockerState(state);
+      broadcastBlockerState(state);
+    }
+    
+    await chrome.storage.local.remove('activeTracking');
+
+    // Sweep tabs and block this domain
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      const tabDomain = getDomainFromUrl(tab.url);
+      if (tabDomain && (tabDomain === domain || tabDomain.endsWith('.' + domain))) {
+        chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('blocked.html?mode=soft&domain=' + encodeURIComponent(domain)) });
+      }
+    }
+  }
+});
+
+// Blocker Tab Monitoring Events
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    await handleTabChange(tab);
+  } catch (e) {}
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    await handleTabChange(tab);
+  }
+});
+
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    await pauseActiveTracking();
+  } else {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, windowId: windowId });
+      if (tab) {
+        await handleTabChange(tab);
+      }
+    } catch (e) {}
+  }
+});
+
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  const local = await chrome.storage.local.get('activeTracking');
+  const tracking = local.activeTracking;
+  if (tracking && tracking.tabId === tabId) {
+    await pauseActiveTracking();
   }
 });
 
@@ -224,6 +446,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     case 'POMODORO_SET_SESSION':
       setSessionType(message.sessionType).then(() => sendResponse({ success: true }));
+      return true;
+    case 'BLOCKER_STATE_UPDATE':
+      saveBlockerState(message.state)
+        .then(() => sweepAllTabsForBlocks())
+        .then(() => sendResponse({ success: true }));
       return true;
   }
 });
@@ -254,6 +481,12 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!existing[STORAGE_KEY]) {
     await saveState(DEFAULT_STATE);
   }
+
+  const existingBlocker = await chrome.storage.sync.get(BLOCKER_STORAGE_KEY);
+  if (!existingBlocker[BLOCKER_STORAGE_KEY]) {
+    await saveBlockerState(DEFAULT_BLOCKER_STATE);
+  }
+
   await setupAutoPopupAlarm();
 });
 

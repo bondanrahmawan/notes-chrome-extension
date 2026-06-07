@@ -344,6 +344,143 @@ document.addEventListener("DOMContentLoaded", function () {
 	document.getElementById("saveBookBtn").addEventListener("click", saveBook);
 
 
+	// Productivity Blocker Logic
+	const hardBlockList = document.getElementById("hardBlockList");
+	const softBlockList = document.getElementById("softBlockList");
+	const blockMode = document.getElementById("blockMode");
+	const blockLimit = document.getElementById("blockLimit");
+	const saveBlockBtn = document.getElementById("saveBlockBtn");
+
+	// Toggle time limit input based on block mode select
+	blockMode.addEventListener("change", function () {
+		if (this.value === "soft") {
+			blockLimit.disabled = false;
+			blockLimit.value = "15";
+		} else {
+			blockLimit.disabled = true;
+			blockLimit.value = "";
+		}
+	});
+
+	function displayBlocker() {
+		chrome.storage.sync.get(["blockerState"], function (result) {
+			const state = result.blockerState || { enabled: true, sites: [] };
+			hardBlockList.innerHTML = "";
+			softBlockList.innerHTML = "";
+
+			const hardSites = state.sites.filter(s => s.mode === "hard");
+			const softSites = state.sites.filter(s => s.mode === "soft");
+
+			if (hardSites.length === 0) {
+				hardBlockList.innerHTML = '<div class="empty-list-msg">No sites hard-blocked.</div>';
+			} else {
+				hardSites.forEach((site) => {
+					const item = document.createElement("div");
+					item.className = "block-item hard-mode";
+					item.innerHTML = `
+						<div class="item-details">
+							<strong>${escapeHtml(site.domain)}</strong><br>
+							<span style="color: var(--text-muted)">Immediate block</span>
+						</div>
+						<div class="item-actions">
+							<button class="deleteBlockBtn delete-btn" data-domain="${escapeHtml(site.domain)}">Remove</button>
+						</div>
+					`;
+					hardBlockList.appendChild(item);
+				});
+			}
+
+			if (softSites.length === 0) {
+				softBlockList.innerHTML = '<div class="empty-list-msg">No sites soft-blocked.</div>';
+			} else {
+				softSites.forEach((site) => {
+					const item = document.createElement("div");
+					item.className = "block-item soft-mode";
+					const spentMin = Math.floor((site.timeSpentToday || 0) / 60);
+					item.innerHTML = `
+						<div class="item-details">
+							<strong>${escapeHtml(site.domain)}</strong><br>
+							<span style="color: var(--text-muted)">Limit: ${site.limitMinutes}m | Spent: ${spentMin}m today</span>
+						</div>
+						<div class="item-actions">
+							<button class="deleteBlockBtn delete-btn" data-domain="${escapeHtml(site.domain)}">Remove</button>
+						</div>
+					`;
+					softBlockList.appendChild(item);
+				});
+			}
+
+			// Attach delete events
+			document.querySelectorAll(".deleteBlockBtn").forEach((button) => {
+				button.addEventListener("click", function () {
+					const domain = this.getAttribute("data-domain");
+					removeBlockedSite(domain);
+				});
+			});
+		});
+	}
+
+	function saveBlockedSite() {
+		let domain = document.getElementById("blockDomain").value.trim().toLowerCase();
+		if (!domain) {
+			alert("Please enter a domain.");
+			return;
+		}
+
+		// Normalize domain: strip protocols and paths
+		domain = domain.replace(/^(https?:\/\/)?(www\.)?/, "");
+		domain = domain.split("/")[0];
+
+		const mode = blockMode.value;
+		let limitMinutes = 0;
+
+		if (mode === "soft") {
+			limitMinutes = parseInt(blockLimit.value, 10);
+			if (isNaN(limitMinutes) || limitMinutes < 1) {
+				alert("Please enter a valid time limit in minutes.");
+				return;
+			}
+		}
+
+		chrome.storage.sync.get(["blockerState"], function (result) {
+			const state = result.blockerState || { enabled: true, sites: [], lastResetDate: "" };
+			
+			// Remove duplicate if same site already exists
+			state.sites = state.sites.filter(s => s.domain !== domain);
+
+			state.sites.push({
+				domain: domain,
+				mode: mode,
+				limitMinutes: limitMinutes,
+				timeSpentToday: 0
+			});
+
+			chrome.storage.sync.set({ blockerState: state }, function () {
+				chrome.runtime.sendMessage({ type: 'BLOCKER_STATE_UPDATE', state }).catch(() => {});
+				displayBlocker();
+				document.getElementById("blockDomain").value = "";
+				blockLimit.value = "";
+				blockMode.value = "hard";
+				blockLimit.disabled = true;
+			});
+		});
+	}
+
+	function removeBlockedSite(domain) {
+		chrome.storage.sync.get(["blockerState"], function (result) {
+			const state = result.blockerState || { enabled: true, sites: [] };
+			state.sites = state.sites.filter(s => s.domain !== domain);
+
+			chrome.storage.sync.set({ blockerState: state }, function () {
+				chrome.runtime.sendMessage({ type: 'BLOCKER_STATE_UPDATE', state }).catch(() => {});
+				displayBlocker();
+			});
+		});
+	}
+
+	saveBlockBtn.addEventListener("click", saveBlockedSite);
+
+
 	// General Settings
 	function loadGeneralSettings() {
 		chrome.storage.sync.get(["popupInterval"], function (result) {
@@ -364,8 +501,17 @@ document.addEventListener("DOMContentLoaded", function () {
 	});
 
 
+	// Sync UI updates from background tracking
+	chrome.runtime.onMessage.addListener((message) => {
+		if (message.type === 'BLOCKER_STATE_UPDATE') {
+			displayBlocker();
+		}
+	});
+
+
 	// Display on load
 	displayNotes();
 	displayBooks();
+	displayBlocker();
 	loadGeneralSettings();
 });
