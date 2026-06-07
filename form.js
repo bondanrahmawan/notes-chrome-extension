@@ -3,39 +3,56 @@ document.addEventListener("DOMContentLoaded", function () {
 	const bookList = document.getElementById("bookList");
 	const colorOptions = document.getElementById("colorOptions");
 	let selectedColor = "#ffeb3b"; // Default color
-	let editingIndex = null; // Keep track of the note being edited
+	let editingNoteIndex = null; // Keep track of the note being edited
+	let editingBookIndex = null; // Keep track of the book being edited
+
+	// Utility to escape HTML
+	function escapeHtml(text) {
+		const div = document.createElement('div');
+		div.textContent = text;
+		return div.innerHTML;
+	}
 
 	// Load and display all notes
 	function displayNotes() {
 		chrome.storage.sync.get(["notes"], function (result) {
 			const notes = result.notes || [];
 			noteList.innerHTML = ""; // Clear the list before rendering
+			
+			if (notes.length === 0) {
+				noteList.innerHTML = '<div class="empty-list-msg">No active notes. Create one below!</div>';
+				return;
+			}
+
 			notes.forEach((note, index) => {
 				const noteItem = document.createElement("div");
 				noteItem.className = "note-item";
-				noteItem.style.backgroundColor = note.color;
-				noteItem.style.color = note.fontColor;
+				noteItem.style.borderLeftColor = note.color;
+				
 				noteItem.innerHTML = `
-          <strong>${note.title}</strong><br>
-          Deadline: ${note.deadline}<br>
-          Priority: ${note.priority}<br>
-          Order: ${note.order}<br>
-          <button class="editBtn" data-index="${index}">Edit</button>
-          <button class="deleteBtn" data-index="${index}">Delete</button>
-        `;
+					<div class="item-details">
+						<strong style="color: ${note.fontColor || '#f8fafc'}">${escapeHtml(note.title)}</strong><br>
+						<span style="color: var(--text-secondary)">Deadline: ${escapeHtml(note.deadline)}</span><br>
+						<span style="color: var(--text-secondary)">Priority: ${escapeHtml(note.priority)} | Order: ${escapeHtml(String(note.order))}</span>
+					</div>
+					<div class="item-actions">
+						<button class="editNoteBtn" data-index="${index}">Edit</button>
+						<button class="deleteNoteBtn delete-btn" data-index="${index}">Delete</button>
+					</div>
+				`;
 				noteList.appendChild(noteItem);
 			});
 
-			// Attach event listeners to the edit and delete buttons
-			document.querySelectorAll(".editBtn").forEach((button) => {
+			// Attach event listeners
+			document.querySelectorAll(".editNoteBtn").forEach((button) => {
 				button.addEventListener("click", function () {
-					const index = this.getAttribute("data-index");
+					const index = parseInt(this.getAttribute("data-index"), 10);
 					loadNoteForEdit(index);
 				});
 			});
-			document.querySelectorAll(".deleteBtn").forEach((button) => {
+			document.querySelectorAll(".deleteNoteBtn").forEach((button) => {
 				button.addEventListener("click", function () {
-					const index = this.getAttribute("data-index");
+					const index = parseInt(this.getAttribute("data-index"), 10);
 					deleteNote(index);
 				});
 			});
@@ -51,22 +68,36 @@ document.addEventListener("DOMContentLoaded", function () {
 			document.getElementById("noteTitle").value = note.title;
 			document.getElementById("noteDeadline").value = note.deadline;
 			document.getElementById("notePriority").value = note.priority;
-			document.getElementById("noteFontColor").value = note.fontColor || "#000000";
+			
+			const noteFontColor = note.fontColor || "#000000";
+			document.getElementById("noteFontColor").value = noteFontColor;
 			document.getElementById("noteOrder").value = note.order;
 
-			selectedColor = note.color;
-			document.querySelectorAll(".color-option").forEach((option) => {
+			// Highlight Note Background Color
+			selectedColor = note.color || "#ffeb3b";
+			document.querySelectorAll("#colorOptions .color-option").forEach((option) => {
 				option.classList.remove("selected");
+				if (option.getAttribute("data-color") === selectedColor) {
+					option.classList.add("selected");
+				}
 			});
-			document.querySelector(`[data-color="${selectedColor}"]`).classList.add("selected");
 
-			editingIndex = index; // Set the editing index
+			// Highlight Font Color Presets
+			document.querySelectorAll("#fontColorPresets .color-option").forEach((option) => {
+				option.classList.remove("selected");
+				if (option.getAttribute("data-color").toLowerCase() === noteFontColor.toLowerCase()) {
+					option.classList.add("selected");
+				}
+			});
+
+			document.getElementById("noteFormTitle").textContent = "Edit Note";
+			editingNoteIndex = index; // Set the editing index
 		});
 	}
 
 	// Save or update a note
 	function saveNote() {
-		const title = document.getElementById("noteTitle").value;
+		const title = document.getElementById("noteTitle").value.trim();
 		const deadline = document.getElementById("noteDeadline").value;
 		const priority = document.getElementById("notePriority").value;
 		const fontColor = document.getElementById("noteFontColor").value;
@@ -81,9 +112,9 @@ document.addEventListener("DOMContentLoaded", function () {
 			const notes = result.notes || [];
 			const note = { title, deadline, priority, color: selectedColor, fontColor, order };
 
-			if (editingIndex !== null) {
+			if (editingNoteIndex !== null) {
 				// Update existing note
-				notes[editingIndex] = note;
+				notes[editingNoteIndex] = note;
 			} else {
 				// Add a new note
 				notes.push(note);
@@ -93,92 +124,138 @@ document.addEventListener("DOMContentLoaded", function () {
 			notes.sort((a, b) => a.order - b.order);
 
 			chrome.storage.sync.set({ notes }, function () {
-				alert("Note saved!");
 				displayNotes(); // Refresh the note list
-				clearForm(); // Reset the form after saving
+				clearNoteForm(); // Reset the form after saving
 			});
 		});
 	}
 
 	// Delete a note
 	function deleteNote(index) {
+		if (!confirm("Are you sure you want to delete this note?")) return;
 		chrome.storage.sync.get(["notes"], function (result) {
 			const notes = result.notes || [];
-			notes.splice(index, 1); // Remove the note at the given index
+			notes.splice(index, 1); // Remove note
 
 			chrome.storage.sync.set({ notes }, function () {
-				alert("Note deleted!");
-				displayNotes(); // Refresh the note list
+				displayNotes(); // Refresh list
+				// If we deleted the note currently being edited, clear the form
+				if (editingNoteIndex === index) {
+					clearNoteForm();
+				}
 			});
 		});
 	}
 
 	// Clear the form
-	function clearForm() {
+	function clearNoteForm() {
 		document.getElementById("noteTitle").value = "";
 		document.getElementById("noteDeadline").value = "";
 		document.getElementById("notePriority").value = "Low";
-		document.getElementById("noteFontColor").value = "#000000";
 		document.getElementById("noteOrder").value = "";
-		document
-			.querySelectorAll(".color-option")
-			.forEach((option) => option.classList.remove("selected"));
+		
+		// Reset Background Color Selection
+		document.querySelectorAll("#colorOptions .color-option").forEach((option) => option.classList.remove("selected"));
 		selectedColor = "#ffeb3b";
-		document.querySelector(`[data-color="${selectedColor}"]`).classList.add("selected");
-		editingIndex = null; // Reset editing state
+		document.querySelector(`#colorOptions [data-color="${selectedColor}"]`).classList.add("selected");
+		
+		// Reset Font Color Selection
+		const defaultFontColor = "#000000";
+		document.getElementById("noteFontColor").value = defaultFontColor;
+		document.querySelectorAll("#fontColorPresets .color-option").forEach((option) => option.classList.remove("selected"));
+		document.querySelector(`#fontColorPresets [data-color="${defaultFontColor}"]`).classList.add("selected");
+
+		document.getElementById("noteFormTitle").textContent = "Add / Edit Note";
+		editingNoteIndex = null; // Reset editing state
 	}
 
-	// Handle color selection
+	// Handle background color selection
 	colorOptions.addEventListener("click", function (event) {
 		if (event.target.classList.contains("color-option")) {
-			document
-				.querySelectorAll(".color-option")
-				.forEach((option) => option.classList.remove("selected"));
+			document.querySelectorAll("#colorOptions .color-option").forEach((option) => option.classList.remove("selected"));
 			event.target.classList.add("selected");
 			selectedColor = event.target.getAttribute("data-color");
 		}
 	});
 
-	// Attach event listener to the save button
+	// Handle font color preset selection
+	const fontColorPresets = document.getElementById("fontColorPresets");
+	fontColorPresets.addEventListener("click", function (event) {
+		if (event.target.classList.contains("color-option")) {
+			document.querySelectorAll("#fontColorPresets .color-option").forEach((option) => option.classList.remove("selected"));
+			event.target.classList.add("selected");
+			const color = event.target.getAttribute("data-color");
+			document.getElementById("noteFontColor").value = color;
+		}
+	});
+
+	// Handle custom font color input changes
+	const noteFontColorInput = document.getElementById("noteFontColor");
+	noteFontColorInput.addEventListener("input", function () {
+		const customColor = this.value.toLowerCase();
+		document.querySelectorAll("#fontColorPresets .color-option").forEach((option) => {
+			if (option.getAttribute("data-color").toLowerCase() === customColor) {
+				option.classList.add("selected");
+			} else {
+				option.classList.remove("selected");
+			}
+		});
+	});
+
+	// Attach event listener to the save note button
 	document.getElementById("saveNoteBtn").addEventListener("click", saveNote);
 
+
+	// Books Functionality
 	function displayBooks() {
 		chrome.storage.sync.get(["books"], function (result) {
 			const books = result.books || [];
 			bookList.innerHTML = ""; // Clear list before rendering
 
+			if (books.length === 0) {
+				bookList.innerHTML = '<div class="empty-list-msg">No books tracked. Create one below!</div>';
+				return;
+			}
+
 			books.forEach((book, index) => {
 				const bookItem = document.createElement("div");
-				bookItem.className = "book-item";
+				const isFinished = typeof book.page === 'string' && (book.page.toLowerCase() === 'finished');
+				
+				bookItem.className = `book-item ${isFinished ? 'book-finished' : ''}`;
+				
 				bookItem.innerHTML = `
-					<strong>${book.title}</strong><br>
-					Page: ${book.page}<br>
-					Last Read: ${book.lastRead}<br>
-					<button class="editBookBtn" data-index="${index}">Edit</button>
-					<button class="deleteBookBtn" data-index="${index}">Delete</button>
-					<button class="markFinishedBtn" data-index="${index}">Mark as Finished</button>
+					<div class="item-details">
+						<strong>${escapeHtml(book.title)}</strong><br>
+						<span style="color: var(--text-secondary)">Page: ${escapeHtml(String(book.page))}</span><br>
+						<span style="color: var(--text-muted)">Last Read: ${escapeHtml(book.lastRead || 'Never')}</span>
+					</div>
+					<div class="item-actions">
+						<button class="editBookBtn" data-index="${index}">Edit</button>
+						<button class="deleteBookBtn delete-btn" data-index="${index}">Delete</button>
+						${!isFinished ? `<button class="markFinishedBtn finish-btn" data-index="${index}">Finish</button>` : ''}
+					</div>
 				`;
 				bookList.appendChild(bookItem);
 			});
 
-			// Attach event listeners for edit, delete, and mark as finished
+			// Attach event listeners
 			document.querySelectorAll(".editBookBtn").forEach((button) => {
 				button.addEventListener("click", function () {
-					const index = this.getAttribute("data-index");
+					const index = parseInt(this.getAttribute("data-index"), 10);
 					loadBookForEdit(index);
 				});
 			});
 
 			document.querySelectorAll(".deleteBookBtn").forEach((button) => {
 				button.addEventListener("click", function () {
-					const index = this.getAttribute("data-index");
+					const index = parseInt(this.getAttribute("data-index"), 10);
 					deleteBook(index);
 				});
 			});
 
 			document.querySelectorAll(".markFinishedBtn").forEach((button) => {
 				button.addEventListener("click", function () {
-					const index = this.getAttribute("data-index");
+					const index = parseInt(this.getAttribute("data-index"), 10);
 					markBookAsFinished(index);
 				});
 			});
@@ -191,21 +268,18 @@ document.addEventListener("DOMContentLoaded", function () {
 			const books = result.books || [];
 			const book = books[index];
 
-			const bookTitleInput = document.getElementById("bookTitle");
-			const bookPageInput = document.getElementById("bookPage");
-			const bookLastReadInput = document.getElementById("bookLastRead");
+			document.getElementById("bookTitle").value = book.title;
+			document.getElementById("bookPage").value = book.page;
+			document.getElementById("bookLastRead").value = book.lastRead || "";
 
-			bookTitleInput.value = book.title;
-			bookPageInput.value = book.page;
-			bookLastReadInput.value = book.lastRead;
-
-			editingIndex = index; // Set the editing index
+			document.getElementById("bookFormTitle").textContent = "Edit Book";
+			editingBookIndex = index; // Set the editing index
 		});
 	}
 
 	function saveBook() {
-		const title = document.getElementById("bookTitle").value;
-		const page = document.getElementById("bookPage").value;
+		const title = document.getElementById("bookTitle").value.trim();
+		const page = document.getElementById("bookPage").value.trim();
 		const lastRead = document.getElementById("bookLastRead").value;
 
 		if (!title || !lastRead) {
@@ -217,40 +291,42 @@ document.addEventListener("DOMContentLoaded", function () {
 			const books = result.books || [];
 			const book = { title, page, lastRead };
 
-			if (editingIndex !== null) {
-				books[editingIndex] = book;
+			if (editingBookIndex !== null) {
+				books[editingBookIndex] = book;
 			} else {
 				books.push(book);
 			}
 
 			chrome.storage.sync.set({ books }, function () {
-				alert("Book saved!");
-				displayBooks(); // Refresh the list
-				clearBookForm(); // Reset the form
+				displayBooks(); // Refresh list
+				clearBookForm(); // Reset form
 			});
 		});
 	}
 
-	// Delete or mark book as finished functions
 	function deleteBook(index) {
+		if (!confirm("Are you sure you want to delete this book?")) return;
 		chrome.storage.sync.get(["books"], function (result) {
 			const books = result.books || [];
 			books.splice(index, 1);
 
 			chrome.storage.sync.set({ books }, function () {
-				alert("Book deleted!");
 				displayBooks();
+				if (editingBookIndex === index) {
+					clearBookForm();
+				}
 			});
 		});
 	}
 
+	// Mark finished
 	function markBookAsFinished(index) {
 		chrome.storage.sync.get(["books"], function (result) {
 			const books = result.books || [];
 			books[index].page = "Finished";
+			books[index].lastRead = new Date().toISOString().split('T')[0];
 
 			chrome.storage.sync.set({ books }, function () {
-				alert("Book marked as finished!");
 				displayBooks();
 			});
 		});
@@ -260,12 +336,36 @@ document.addEventListener("DOMContentLoaded", function () {
 		document.getElementById("bookTitle").value = "";
 		document.getElementById("bookPage").value = "";
 		document.getElementById("bookLastRead").value = "";
+		document.getElementById("bookFormTitle").textContent = "Add / Edit Book";
+		editingBookIndex = null;
 	}
 
-	// Attach event listener for the save button
+	// Save book event listener
 	document.getElementById("saveBookBtn").addEventListener("click", saveBook);
 
-	// Display the list of notes and notes when the page loads
+
+	// General Settings
+	function loadGeneralSettings() {
+		chrome.storage.sync.get(["popupInterval"], function (result) {
+			document.getElementById("popupInterval").value = result.popupInterval || 15;
+		});
+	}
+
+	document.getElementById("saveSettingsBtn").addEventListener("click", function () {
+		const interval = parseInt(document.getElementById("popupInterval").value, 10);
+		if (isNaN(interval) || interval < 1) {
+			alert("Please provide a valid interval of at least 1 minute.");
+			return;
+		}
+
+		chrome.storage.sync.set({ popupInterval: interval }, function () {
+			alert("Settings saved!");
+		});
+	});
+
+
+	// Display on load
 	displayNotes();
 	displayBooks();
+	loadGeneralSettings();
 });
